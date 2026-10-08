@@ -1,0 +1,113 @@
+spring:
+  application:
+    name: order-service
+  profiles:
+    active: dev
+  cloud:
+    config:
+      uri: http://localhost:8085
+    loadbalancer:
+      health-check:
+        # Her 10 saniyede bir instance sağlığını kontrol et
+        interval: 10s
+        # Sağlık kontrolü için varsayılan path
+        path:
+          default: /actuator/health
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+      # İstek giden instance hata döndürdüğünde
+      # (5xx hataları vb.), Spring Cloud LoadBalancer'ın
+      # retry mekanizması devreye girerek isteği anında
+      # sağlıklı olan diğer instance'a yönlendirebilir.
+      loadbalancer:
+        retry:
+          enabled: true
+          max-retries-on-next-service-instance: 2
+          retry-on-all-operations: false
+          retryable-status-codes: 500,503
+    stream:
+      kafka:
+        binder:
+          auto-create-topics: true
+          brokers: localhost:29092
+        bindings:
+          submitOrder-out-0:
+            producer:
+              configuration:
+                enable:
+                  idempotance: true
+                acks: all
+                retries: 3
+      bindings:
+        submitOrder-out-0:
+          destination: order_topic
+        orderSubmitFailed-in-0:
+          destination: order_failed_topic
+          group: order_failed_group
+    function:
+      definition: orderSubmitFailed
+  config:
+    import: optional:configserver:http://localhost:8085
+  boot:
+    admin:
+      client:
+        enabled: true
+        url: http://localhost:8081
+
+server:
+  port: 5001
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+    register-with-eureka: true
+    fetch-registry: true
+    # Actuator /health durumunu Eureka'ya ilet (kritik ayar)
+    healthcheck:
+      enabled: true
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+    # Heartbeat ve lease süreleri (simülasyon için kısa tutuldu, prod'da artırın)
+    lease-renewal-interval-in-seconds: 5
+    lease-expiration-duration-in-seconds: 15
+    # Eureka'ya actuator health ve info URL'lerini bildir
+    health-check-url-path: /actuator/health
+    status-page-url-path: /actuator/info
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: "*"
+  endpoint:
+    refresh:
+      enabled: true
+    env:
+      enabled: true
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  level:
+    com.mertalptekin.orderservice.client.ProductClient: DEBUG
+    com.mertalptekin.orderservice.controller.OrderController: INFO
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
